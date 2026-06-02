@@ -156,7 +156,12 @@ do
   --   See `:help lua-options`
   --   and `:help lua-guide-options`
   vim.o.list = true
-  vim.opt.listchars = { tab = '» ', trail = '·', nbsp = '␣' }
+  vim.opt.listchars = { tab = '  ', trail = '·', nbsp = '␣' }
+
+  -- How wide a tab character is displayed (VSCode-style: 4 columns).
+  -- shiftwidth controls indent steps (>>, <<, autoindent).
+  vim.o.tabstop = 4
+  vim.o.shiftwidth = 4
 
   -- Preview substitutions live, as you type!
   vim.o.inccommand = 'split'
@@ -245,6 +250,35 @@ do
     group = vim.api.nvim_create_augroup('kickstart-highlight-yank', { clear = true }),
     callback = function() vim.hl.on_yank() end,
   })
+
+  -- Reload the Neovim config without restarting: `:Reload`
+  -- Re-sources init.lua. Option/keymap/global changes apply immediately. Note that
+  -- plugin setup that runs on buffer attach (e.g. gitsigns `on_attach`) only re-runs
+  -- when a buffer attaches, so reload + `:edit` the buffer, or do a full restart, to
+  -- pick those up.
+  vim.api.nvim_create_user_command('Reload', function()
+    vim.cmd 'source $MYVIMRC'
+    vim.notify('Reloaded ' .. vim.env.MYVIMRC, vim.log.levels.INFO)
+  end, { desc = 'Reload Neovim config (source init.lua)' })
+
+  -- Commit staged changes: `:Commit your message here`
+  -- With no argument it prompts for a message. Commits only what's staged
+  -- (plain `git commit`, no `-a`) — stage hunks/files first with `<leader>g`.
+  vim.api.nvim_create_user_command('Commit', function(opts)
+    local function do_commit(msg)
+      if not msg or vim.trim(msg) == '' then
+        vim.notify('Commit aborted: empty message', vim.log.levels.WARN)
+        return
+      end
+      local out = vim.fn.systemlist { 'git', 'commit', '-m', msg }
+      vim.notify(table.concat(out, '\n'), vim.v.shell_error == 0 and vim.log.levels.INFO or vim.log.levels.ERROR)
+    end
+    if opts.args ~= '' then
+      do_commit(opts.args)
+    else
+      vim.ui.input({ prompt = 'Commit message: ' }, do_commit)
+    end
+  end, { nargs = '?', desc = 'Commit staged changes (git commit -m)' })
 end
 
 -- ============================================================
@@ -360,6 +394,56 @@ do
       topdelete = { text = '‾' }, ---@diagnostic disable-line: missing-fields
       changedelete = { text = '~' }, ---@diagnostic disable-line: missing-fields
     },
+    on_attach = function(bufnr)
+      local gitsigns = require 'gitsigns'
+
+      local function map(mode, l, r, opts)
+        opts = opts or {}
+        opts.buffer = bufnr
+        vim.keymap.set(mode, l, r, opts)
+      end
+
+      -- Navigation
+      map('n', ']c', function()
+        if vim.wo.diff then
+          vim.cmd.normal { ']c', bang = true }
+        else
+          gitsigns.nav_hunk 'next'
+        end
+      end, { desc = 'Jump to next git [c]hange' })
+
+      map('n', '[c', function()
+        if vim.wo.diff then
+          vim.cmd.normal { '[c', bang = true }
+        else
+          gitsigns.nav_hunk 'prev'
+        end
+      end, { desc = 'Jump to previous git [c]hange' })
+
+      -- Actions
+      -- visual mode
+      map('v', '<leader>gs', function() gitsigns.stage_hunk { vim.fn.line '.', vim.fn.line 'v' } end, { desc = 'git [s]tage hunk' })
+      map('v', '<leader>gr', function() gitsigns.reset_hunk { vim.fn.line '.', vim.fn.line 'v' } end, { desc = 'git [r]eset hunk' })
+      -- normal mode
+      map('n', '<leader>gs', gitsigns.stage_hunk, { desc = 'git [s]tage hunk' })
+      map('n', '<leader>gr', gitsigns.reset_hunk, { desc = 'git [r]eset hunk' })
+      map('n', '<leader>gS', gitsigns.stage_buffer, { desc = 'git [S]tage buffer' })
+      map('n', '<leader>gR', gitsigns.reset_buffer, { desc = 'git [R]eset buffer' })
+      map('n', '<leader>gu', gitsigns.reset_buffer_index, { desc = 'git [u]nstage buffer' })
+      map('n', '<leader>gp', gitsigns.preview_hunk, { desc = 'git [p]review hunk' })
+      map('n', '<leader>gi', gitsigns.preview_hunk_inline, { desc = 'git preview hunk [i]nline' })
+      map('n', '<leader>gb', function() gitsigns.blame_line { full = true } end, { desc = 'git [b]lame line' })
+      map('n', '<leader>gd', gitsigns.diffthis, { desc = 'git [d]iff against index' })
+      map('n', '<leader>gD', function() gitsigns.diffthis '@' end, { desc = 'git [D]iff against last commit' })
+      map('n', '<leader>gQ', function() gitsigns.setqflist 'all' end, { desc = 'git hunk [Q]uickfix list (all files in repo)' })
+      map('n', '<leader>gq', gitsigns.setqflist, { desc = 'git hunk [q]uickfix list (all changes in this file)' })
+      -- Toggles
+      map('n', '<leader>gB', gitsigns.toggle_current_line_blame, { desc = 'git toggle line [B]lame' })
+      map('n', '<leader>gw', gitsigns.toggle_word_diff, { desc = 'git toggle intra-line [w]ord diff' })
+
+      -- Text object
+      map({ 'o', 'x' }, 'ih', gitsigns.select_hunk)
+    end,
   }
 
   -- Useful plugin to show you pending keybinds.
@@ -372,7 +456,7 @@ do
     spec = {
       { '<leader>s', group = '[S]earch', mode = { 'n', 'v' } },
       { '<leader>t', group = '[T]oggle' },
-      { '<leader>h', group = 'Git [H]unk', mode = { 'n', 'v' } }, -- Enable gitsigns recommended keymaps first
+      { '<leader>g', group = '[G]it', mode = { 'n', 'v' } }, -- Enable gitsigns recommended keymaps first
       { 'gr', group = 'LSP Actions', mode = { 'n' } },
     },
   }
@@ -383,18 +467,17 @@ do
   -- change the command under that to load whatever the name of that colorscheme is.
   --
   -- If you want to see what colorschemes are already installed, you can use `:Telescope colorscheme`.
-  vim.pack.add { gh 'folke/tokyonight.nvim' }
-  ---@diagnostic disable-next-line: missing-fields
-  require('tokyonight').setup {
+  vim.pack.add { gh 'rose-pine/neovim' }
+  require('rose-pine').setup {
+    variant = 'main', -- 'main' (dark) | 'moon' (dark) | 'dawn' (light)
     styles = {
-      comments = { italic = false }, -- Disable italics in comments
+      italic = false, -- Disable italics
     },
   }
 
   -- Load the colorscheme here.
-  -- Like many other themes, this one has different styles, and you could load
-  -- any other, such as 'tokyonight-storm', 'tokyonight-moon', or 'tokyonight-day'.
-  vim.cmd.colorscheme 'tokyonight-night'
+  vim.o.background = 'dark'
+  vim.cmd.colorscheme 'rose-pine'
 
   -- Highlight todo, notes, etc in comments
   vim.pack.add { gh 'folke/todo-comments.nvim' }
@@ -494,6 +577,14 @@ do
     --   },
     -- },
     -- pickers = {}
+    --
+    defaults = {
+      file_ignore_patterns = {
+        'node_modules',
+        '.git',
+        'dist',
+      },
+    },
     extensions = {
       ['ui-select'] = { require('telescope.themes').get_dropdown() },
     },
@@ -515,6 +606,7 @@ do
   vim.keymap.set('n', '<leader>sr', builtin.resume, { desc = '[S]earch [R]esume' })
   vim.keymap.set('n', '<leader>s.', builtin.oldfiles, { desc = '[S]earch Recent Files ("." for repeat)' })
   vim.keymap.set('n', '<leader>sc', builtin.commands, { desc = '[S]earch [C]ommands' })
+  vim.keymap.set('n', '<leader>gc', builtin.git_status, { desc = 'git [c]hanged files (status picker)' })
   vim.keymap.set('n', '<leader><leader>', builtin.buffers, { desc = '[ ] Find existing buffers' })
 
   -- Add Telescope-based LSP pickers when an LSP attaches to a buffer.
@@ -681,6 +773,14 @@ do
     end,
   })
 
+  vim.diagnostic.config {
+    virtual_text = {
+      prefix = '●', -- Or use '' if you don't want a symbol
+      suffix = '',
+      spacing = 4, -- Space between code and diagnostic
+    },
+  }
+
   -- Enable the following language servers
   --  Feel free to add/remove any LSPs that you want here. They will automatically be installed.
   --  See `:help lsp-config` for information about keys and how to configure
@@ -695,9 +795,11 @@ do
     --    https://github.com/pmizio/typescript-tools.nvim
     --
     -- But for many setups, the LSP (`ts_ls`) will work just fine
-    -- ts_ls = {},
+    ts_ls = {},
 
     stylua = {}, -- Used to format Lua code
+
+    biome = {},
 
     -- Special Lua Config, as recommended by neovim help docs
     lua_ls = {
@@ -795,7 +897,9 @@ do
       -- python = { "isort", "black" },
       --
       -- You can use 'stop_after_first' to run the first available formatter from the list
-      -- javascript = { "prettierd", "prettier", stop_after_first = true },
+      javascript = { 'biome', 'biome-organize-imports' },
+      typescript = { 'biome', 'biome-organize-imports' },
+      typescriptreact = { 'biome', 'biome-organize-imports' },
     },
   }
 
