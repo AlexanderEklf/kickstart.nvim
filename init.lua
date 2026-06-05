@@ -210,6 +210,12 @@ do
 
   vim.keymap.set('n', '<leader>q', vim.diagnostic.setloclist, { desc = 'Open diagnostic [Q]uickfix list' })
 
+  -- Create a new file next to the current file: pre-fills `:e <dir-of-current-file>/`
+  -- so you just type the filename and press Enter. `:w ++p` creates parent dirs if needed.
+  vim.keymap.set('n', '<leader>nf', function()
+    return ':e ' .. vim.fn.expand '%:.:h' .. '/'
+  end, { expr = true, desc = '[N]ew [F]ile next to current file' })
+
   -- Exit terminal mode in the builtin terminal with a shortcut that is a bit easier
   -- for people to discover. Otherwise, you normally need to press <C-\><C-n>, which
   -- is not what someone will guess without a bit more experience.
@@ -800,6 +806,8 @@ do
     stylua = {}, -- Used to format Lua code
 
     biome = {},
+
+    bicep = {},
 
     -- Special Lua Config, as recommended by neovim help docs
     lua_ls = {
